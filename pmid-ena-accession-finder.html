@@ -168,7 +168,7 @@
 <body>
   <main class="card">
     <h1>PMID to PMCID to ENA Accessions</h1>
-    <p>Enter a PMID. If the article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
+    <p>Enter a PMID or a PubMed URL. If the article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
 
     <div class="tabs">
       <button id="toolTabBtn" class="tab-btn active" type="button" aria-controls="toolPanel">Tool</button>
@@ -177,7 +177,7 @@
 
     <section id="toolPanel" class="panel">
       <div class="row">
-        <input id="pmidInput" type="text" placeholder="Example PMID: 32720686" aria-label="PMID">
+        <input id="pmidInput" type="text" placeholder="Example PMID: 32720686 or https://pubmed.ncbi.nlm.nih.gov/41931713/" aria-label="PMID or PubMed URL">
         <button id="runBtn" type="button">Check PMID</button>
       </div>
 
@@ -192,7 +192,7 @@
       <div class="about-box">
         <h2>What This Script Does</h2>
         <ul>
-          <li>Reads a PMID you enter.</li>
+          <li>Accepts either a numeric PMID or a PubMed URL, then extracts/normalizes to PMID.</li>
           <li>Checks if that PMID has a linked PMC article (`pubmed_pmc`).</li>
           <li>If linked, resolves the PMCID and fetches full-text XML from PMC.</li>
           <li>Runs ENA accession regex patterns over the full text and reports unique matches.</li>
@@ -258,6 +258,48 @@
 
     function setOutput(text) {
       outputEl.textContent = text;
+    }
+
+    function parseInputToPmid(rawInput) {
+      const raw = (rawInput || "").trim();
+      if (!raw) {
+        return { pmid: null, error: "Enter a PMID or PubMed URL." };
+      }
+
+      if (/^\d+$/.test(raw)) {
+        return { pmid: raw, error: null };
+      }
+
+      try {
+        const url = new URL(raw);
+        const host = (url.hostname || "").toLowerCase();
+        const isModernPubmedHost = host === "pubmed.ncbi.nlm.nih.gov" || host === "www.pubmed.ncbi.nlm.nih.gov";
+        const isLegacyPubmedHost = host === "www.ncbi.nlm.nih.gov" || host === "ncbi.nlm.nih.gov";
+        if (!isModernPubmedHost && !isLegacyPubmedHost) {
+          return { pmid: null, error: "Only PubMed URLs are supported for URL input." };
+        }
+
+        const segments = (url.pathname || "")
+          .split("/")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (isModernPubmedHost) {
+          const first = segments[0] || "";
+          if (/^\d+$/.test(first)) {
+            return { pmid: first, error: null };
+          }
+        } else if (isLegacyPubmedHost) {
+          const first = (segments[0] || "").toLowerCase();
+          const second = segments[1] || "";
+          if (first === "pubmed" && /^\d+$/.test(second)) {
+            return { pmid: second, error: null };
+          }
+        }
+
+        return { pmid: null, error: "Could not extract PMID from PubMed URL." };
+      } catch (_err) {
+        return { pmid: null, error: "Input must be a numeric PMID or PubMed URL." };
+      }
     }
 
     async function fetchJson(url) {
@@ -334,12 +376,14 @@
     }
 
     async function run() {
-      const pmid = pmidInput.value.trim();
-      if (!/^\d+$/.test(pmid)) {
-        setStatus("Enter a numeric PMID.", "warn");
-        setOutput("PMID must be digits only.");
+      const rawInput = pmidInput.value.trim();
+      const parsed = parseInputToPmid(rawInput);
+      if (!parsed.pmid) {
+        setStatus(parsed.error || "Invalid input.", "warn");
+        setOutput(parsed.error || "Input is invalid.");
         return;
       }
+      const pmid = parsed.pmid;
 
       runBtn.disabled = true;
       setOutput("Running...");
