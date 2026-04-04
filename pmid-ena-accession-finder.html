@@ -37,6 +37,31 @@
       padding: 24px;
     }
 
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin: 12px 0 14px;
+    }
+
+    .tab-btn {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f6f8fa;
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: #dbeafe;
+      border-color: #8fbdf2;
+    }
+
+    .panel[hidden] {
+      display: none;
+    }
+
     h1 {
       margin-top: 0;
       margin-bottom: 8px;
@@ -105,6 +130,39 @@
       font-size: 0.92rem;
       line-height: 1.4;
     }
+
+    .about-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: #fbfdff;
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    .about-box h2,
+    .about-box h3 {
+      margin: 6px 0 6px;
+      font-size: 1rem;
+    }
+
+    .about-box ul {
+      margin: 4px 0 12px 18px;
+      padding: 0;
+    }
+
+    .case {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 10px;
+      margin: 8px 0;
+    }
+
+    .case-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
   </style>
 </head>
 <body>
@@ -112,15 +170,61 @@
     <h1>PMID to PMCID to ENA Accessions</h1>
     <p>Enter a PMID. If the article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
 
-    <div class="row">
-      <input id="pmidInput" type="text" placeholder="Example PMID: 32720686" aria-label="PMID">
-      <button id="runBtn" type="button">Check PMID</button>
+    <div class="tabs">
+      <button id="toolTabBtn" class="tab-btn active" type="button" aria-controls="toolPanel">Tool</button>
+      <button id="aboutTabBtn" class="tab-btn" type="button" aria-controls="aboutPanel">About</button>
     </div>
 
-    <div id="status" class="status" aria-live="polite"></div>
+    <section id="toolPanel" class="panel">
+      <div class="row">
+        <input id="pmidInput" type="text" placeholder="Example PMID: 32720686" aria-label="PMID">
+        <button id="runBtn" type="button">Check PMID</button>
+      </div>
 
-    <section class="result-box">
-      <pre id="output">No query run yet.</pre>
+      <div id="status" class="status" aria-live="polite"></div>
+
+      <section class="result-box">
+        <pre id="output">No query run yet.</pre>
+      </section>
+    </section>
+
+    <section id="aboutPanel" class="panel" hidden>
+      <div class="about-box">
+        <h2>What This Script Does</h2>
+        <ul>
+          <li>Reads a PMID you enter.</li>
+          <li>Checks if that PMID has a linked PMC article (`pubmed_pmc`).</li>
+          <li>If linked, resolves the PMCID and fetches full-text XML from PMC.</li>
+          <li>Runs ENA accession regex patterns over the full text and reports unique matches.</li>
+        </ul>
+
+        <h3>How to interpret outputs</h3>
+
+        <p>
+          ENA accession format reference:
+          <a href="https://ena-docs.readthedocs.io/en/latest/submit/general-guide/accessions.html" target="_blank" rel="noopener noreferrer">
+            ENA accession documentation
+          </a>
+        </p>
+
+        <div class="case">
+          <div class="case-title">Case 1: Not a PMC article</div>
+          <div>Status: <strong>This is not a PMCID article.</strong></div>
+          <div>Meaning: The PMID does not have a `pubmed_pmc` link, so no full-text fetch is attempted.</div>
+        </div>
+
+        <div class="case">
+          <div class="case-title">Case 2: PMC article but no accession codes</div>
+          <div>Status: <strong>PMCID found (...). No ENA accession matches found.</strong></div>
+          <div>Meaning: Full text is available, but none of the current ENA regex patterns matched text in this paper.</div>
+        </div>
+
+        <div class="case">
+          <div class="case-title">Case 3: PMC article with accession codes</div>
+          <div>Status: <strong>PMCID found (...). N accession(s) matched.</strong></div>
+          <div>Meaning: One or more ENA-style accession strings were detected and listed in the output panel.</div>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -142,6 +246,10 @@
     const runBtn = document.getElementById("runBtn");
     const statusEl = document.getElementById("status");
     const outputEl = document.getElementById("output");
+    const toolTabBtn = document.getElementById("toolTabBtn");
+    const aboutTabBtn = document.getElementById("aboutTabBtn");
+    const toolPanel = document.getElementById("toolPanel");
+    const aboutPanel = document.getElementById("aboutPanel");
 
     function setStatus(text, cls) {
       statusEl.className = `status ${cls || ""}`.trim();
@@ -280,10 +388,20 @@
       }
     }
 
+    function showPanel(name) {
+      const showTool = name === "tool";
+      toolPanel.hidden = !showTool;
+      aboutPanel.hidden = showTool;
+      toolTabBtn.classList.toggle("active", showTool);
+      aboutTabBtn.classList.toggle("active", !showTool);
+    }
+
     runBtn.addEventListener("click", run);
     pmidInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") run();
     });
+    toolTabBtn.addEventListener("click", () => showPanel("tool"));
+    aboutTabBtn.addEventListener("click", () => showPanel("about"));
   </script>
 </body>
 </html>
