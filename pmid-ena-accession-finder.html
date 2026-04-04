@@ -328,14 +328,21 @@
       <div class="about-box">
         <h2>What This Script Does</h2>
         <ul>
-          <li>Accepts one input per line: numeric PMID, PubMed URL, or PMC URL, then normalizes each line for lookup.</li>
-          <li>Resolves the normalized identifier to a PMC record, then verifies PMCID context.</li>
-          <li>If linked, resolves the PMCID and fetches full-text XML from PMC.</li>
-          <li>Runs ENA accession regex patterns over the full text and reports unique matches.</li>
+          <li>Processes batch input (one item per line) and supports numeric PMID, PMCID, PubMed URL, and PMC URL formats.</li>
+          <li>Normalizes each line to PMID/PMCID, then resolves to a PMC record when available.</li>
+          <li>For PMC articles, fetches full-text XML and scans text with ENA accession regex patterns.</li>
+          <li>Shows per-item output plus batch summary counts (parsed, invalid, PMC coverage, matches, and request errors).</li>
+          <li>Applies client-side request throttling (~400 ms minimum between Entrez calls) to stay under no-key limits.</li>
         </ul>
 
-        <h3>How to interpret outputs</h3>
+        <h3>Export and metadata behavior</h3>
 
+        <p>
+          CSV export is one row per input article. Accessions are deduplicated and stored in one cell as a semicolon-separated list with an accession count.
+        </p>
+        <p>
+          Metadata mode adds: title, journal, publication year, DOI, and authors. Export uses the metadata mode from the batch run itself (not the current checkbox state), so schema/content stay consistent with that run.
+        </p>
         <p>
           ENA accession format reference:
           <a href="https://ena-docs.readthedocs.io/en/latest/submit/general-guide/accessions.html" target="_blank" rel="noopener noreferrer">
