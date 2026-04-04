@@ -180,7 +180,7 @@
 <body>
   <main class="card">
     <h1>PMID to PMCID to ENA Accessions</h1>
-    <p>Enter one PMID or PubMed URL per line. If an article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
+    <p>Enter one PMID, PubMed URL, or PMC URL per line. If an article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
 
     <div class="tabs">
       <button id="toolTabBtn" class="tab-btn active" type="button" aria-controls="toolPanel">Tool</button>
@@ -191,7 +191,7 @@
       <div class="row">
         <button id="runBtn" type="button">Run Batch</button>
       </div>
-      <textarea id="pmidInput" placeholder="32720686&#10;https://pubmed.ncbi.nlm.nih.gov/41931713/&#10;https://www.ncbi.nlm.nih.gov/pubmed/32720686" aria-label="One PMID or PubMed URL per line"></textarea>
+      <textarea id="pmidInput" placeholder="32720686&#10;https://pubmed.ncbi.nlm.nih.gov/41931713/&#10;https://www.ncbi.nlm.nih.gov/pubmed/32720686&#10;https://pmc.ncbi.nlm.nih.gov/articles/PMC10828421/&#10;https://pmc.ncbi.nlm.nih.gov/articles/pmid/32010645/" aria-label="One PMID, PubMed URL, or PMC URL per line"></textarea>
 
       <div id="status" class="status" aria-live="polite"></div>
 
@@ -204,8 +204,8 @@
       <div class="about-box">
         <h2>What This Script Does</h2>
         <ul>
-          <li>Accepts one input per line: numeric PMID or PubMed URL, then normalizes each line to PMID.</li>
-          <li>Checks if that PMID has a linked PMC article (`pubmed_pmc`).</li>
+          <li>Accepts one input per line: numeric PMID, PubMed URL, or PMC URL, then normalizes each line for lookup.</li>
+          <li>Resolves the normalized identifier to a PMC record, then verifies PMCID context.</li>
           <li>If linked, resolves the PMCID and fetches full-text XML from PMC.</li>
           <li>Runs ENA accession regex patterns over the full text and reports unique matches.</li>
         </ul>
@@ -278,23 +278,28 @@
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
-    function parseInputToPmid(rawInput) {
+    function parseInputToIdentifier(rawInput) {
       const raw = (rawInput || "").trim();
       if (!raw) {
-        return { pmid: null, error: "Enter a PMID or PubMed URL." };
+        return { pmid: null, pmcid: null, error: "Enter a PMID, PubMed URL, or PMC URL." };
       }
 
       if (/^\d+$/.test(raw)) {
-        return { pmid: raw, error: null };
+        return { pmid: raw, pmcid: null, error: null };
+      }
+
+      if (/^PMC\d+$/i.test(raw)) {
+        return { pmid: null, pmcid: raw.toUpperCase(), error: null };
       }
 
       try {
         const url = new URL(raw);
         const host = (url.hostname || "").toLowerCase();
         const isModernPubmedHost = host === "pubmed.ncbi.nlm.nih.gov" || host === "www.pubmed.ncbi.nlm.nih.gov";
-        const isLegacyPubmedHost = host === "www.ncbi.nlm.nih.gov" || host === "ncbi.nlm.nih.gov";
-        if (!isModernPubmedHost && !isLegacyPubmedHost) {
-          return { pmid: null, error: "Only PubMed URLs are supported for URL input." };
+        const isLegacyNcbiHost = host === "www.ncbi.nlm.nih.gov" || host === "ncbi.nlm.nih.gov";
+        const isPmcHost = host === "pmc.ncbi.nlm.nih.gov" || host === "www.pmc.ncbi.nlm.nih.gov";
+        if (!isModernPubmedHost && !isLegacyNcbiHost && !isPmcHost) {
+          return { pmid: null, pmcid: null, error: "Only PubMed or PMC URLs are supported for URL input." };
         }
 
         const segments = (url.pathname || "")
@@ -304,19 +309,36 @@
         if (isModernPubmedHost) {
           const first = segments[0] || "";
           if (/^\d+$/.test(first)) {
-            return { pmid: first, error: null };
+            return { pmid: first, pmcid: null, error: null };
           }
-        } else if (isLegacyPubmedHost) {
+        } else if (isLegacyNcbiHost) {
           const first = (segments[0] || "").toLowerCase();
           const second = segments[1] || "";
+          const third = segments[2] || "";
           if (first === "pubmed" && /^\d+$/.test(second)) {
-            return { pmid: second, error: null };
+            return { pmid: second, pmcid: null, error: null };
+          }
+          if (first === "pmc" && second.toLowerCase() === "articles" && /^PMC\d+$/i.test(third)) {
+            return { pmid: null, pmcid: third.toUpperCase(), error: null };
+          }
+          if (first === "pmc" && second.toLowerCase() === "articles" && third.toLowerCase() === "pmid" && /^\d+$/.test(segments[3] || "")) {
+            return { pmid: segments[3], pmcid: null, error: null };
+          }
+        } else if (isPmcHost) {
+          const first = (segments[0] || "").toLowerCase();
+          const second = segments[1] || "";
+          const third = segments[2] || "";
+          if (first === "articles" && /^PMC\d+$/i.test(second)) {
+            return { pmid: null, pmcid: second.toUpperCase(), error: null };
+          }
+          if (first === "articles" && second.toLowerCase() === "pmid" && /^\d+$/.test(third)) {
+            return { pmid: third, pmcid: null, error: null };
           }
         }
 
-        return { pmid: null, error: "Could not extract PMID from PubMed URL." };
+        return { pmid: null, pmcid: null, error: "Could not extract PMID/PMCID from URL." };
       } catch (_err) {
-        return { pmid: null, error: "Input must be a numeric PMID or PubMed URL." };
+        return { pmid: null, pmcid: null, error: "Input must be a PMID, PMCID, PubMed URL, or PMC URL." };
       }
     }
 
@@ -383,17 +405,17 @@
       return null;
     }
 
-    async function getPmcidFromPmcUid(pmcUid) {
+    async function getPmcSummaryByUid(pmcUid) {
       const url = `${EUTILS_BASE}/esummary.fcgi?db=pmc&id=${encodeURIComponent(pmcUid)}&retmode=json`;
       const data = await fetchJson(url);
-      const rec = data.result && data.result[pmcUid];
-      if (!rec) {
-        return null;
-      }
+      return (data.result && data.result[pmcUid]) || null;
+    }
 
-      const ids = rec.articleids || [];
+    function getArticleIdValue(summaryRec, idType) {
+      if (!summaryRec) return null;
+      const ids = summaryRec.articleids || [];
       for (const idObj of ids) {
-        if (idObj && idObj.idtype === "pmcid" && idObj.value) {
+        if (idObj && idObj.idtype === idType && idObj.value) {
           return idObj.value;
         }
       }
@@ -405,13 +427,22 @@
       return fetchText(url);
     }
 
-    async function processSinglePmid(pmid) {
+    async function processSingleInput(parsed) {
       try {
-        const pmcUid = await getPmcUidFromPmid(pmid);
+        let pmid = parsed.pmid || "";
+        let pmcUid = "";
+        let pmcid = "";
+
+        if (parsed.pmid) {
+          pmcUid = await getPmcUidFromPmid(parsed.pmid);
+        } else if (parsed.pmcid) {
+          pmcid = parsed.pmcid.toUpperCase();
+          pmcUid = pmcid.replace(/^PMC/i, "");
+        }
 
         if (!pmcUid) {
           return {
-            pmid,
+            pmid: parsed.pmid || "",
             isPmcArticle: false,
             pmcid: "",
             accessions: [],
@@ -419,7 +450,23 @@
           };
         }
 
-        const pmcid = await getPmcidFromPmcUid(pmcUid);
+        const summaryRec = await getPmcSummaryByUid(pmcUid);
+        if (!summaryRec) {
+          return {
+            pmid: parsed.pmid || "",
+            isPmcArticle: false,
+            pmcid: parsed.pmcid || "",
+            accessions: [],
+            note: "PMC record summary could not be resolved."
+          };
+        }
+
+        if (!pmcid) {
+          pmcid = getArticleIdValue(summaryRec, "pmcid") || "";
+        }
+        if (!pmid) {
+          pmid = getArticleIdValue(summaryRec, "pmid") || "";
+        }
 
         if (!pmcid) {
           return {
@@ -447,9 +494,9 @@
         };
       } catch (err) {
         return {
-          pmid,
+          pmid: parsed.pmid || "",
           isPmcArticle: false,
-          pmcid: "",
+          pmcid: parsed.pmcid || "",
           accessions: [],
           note: `Request failed: ${err.message}`,
           error: true
@@ -508,7 +555,7 @@
         .filter(Boolean);
 
       if (!lines.length) {
-        setStatus("Enter at least one PMID or PubMed URL (one per line).", "warn");
+        setStatus("Enter at least one PMID, PubMed URL, or PMC URL (one per line).", "warn");
         setOutput("No non-empty input lines were provided.");
         return;
       }
@@ -521,8 +568,8 @@
           const rawInput = lines[i];
           setStatus(`Processing ${i + 1}/${lines.length}...`, "");
 
-          const parsed = parseInputToPmid(rawInput);
-          if (!parsed.pmid) {
+          const parsed = parseInputToIdentifier(rawInput);
+          if (!parsed.pmid && !parsed.pmcid) {
             results.push({
               inputRaw: rawInput,
               invalidInput: true,
@@ -535,7 +582,7 @@
             continue;
           }
 
-          const single = await processSinglePmid(parsed.pmid);
+          const single = await processSingleInput(parsed);
           results.push({
             inputRaw: rawInput,
             invalidInput: false,
