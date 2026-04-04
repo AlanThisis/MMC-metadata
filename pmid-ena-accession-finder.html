@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PMID to ENA Accession Finder</title>
+  <style>
+    :root {
+      --bg: #f3f6f8;
+      --card: #ffffff;
+      --text: #1b1f23;
+      --muted: #57606a;
+      --accent: #0b6bcb;
+      --ok: #1a7f37;
+      --warn: #9a6700;
+      --err: #cf222e;
+      --border: #d0d7de;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at top left, #e7f1fb, var(--bg) 50%);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(900px, 100%);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(27, 31, 35, 0.08);
+      padding: 24px;
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-size: 1.5rem;
+    }
+
+    p {
+      margin-top: 0;
+      color: var(--muted);
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    input {
+      flex: 1;
+      min-width: 220px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+
+    button {
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.7;
+      cursor: wait;
+    }
+
+    .status {
+      margin: 8px 0 14px;
+      font-weight: 600;
+    }
+
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .err { color: var(--err); }
+
+    .result-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: #fbfdff;
+    }
+
+    pre {
+      margin: 0;
+      max-height: 320px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>PMID to PMCID to ENA Accessions</h1>
+    <p>Enter a PMID. If the article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
+
+    <div class="row">
+      <input id="pmidInput" type="text" placeholder="Example PMID: 32720686" aria-label="PMID">
+      <button id="runBtn" type="button">Check PMID</button>
+    </div>
+
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <section class="result-box">
+      <pre id="output">No query run yet.</pre>
+    </section>
+  </main>
+
+  <script>
+    const EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
+
+    const patterns = [
+      /\bPRJ[EDN][A-Z]?\d+\b/g,    // Project accession (BioProject)
+      /\b[EDS]RP\d{6,}\b/g,        // Study accession
+      /\bSAM[EDN][A-Z]?\d+\b/g,    // Sample accession (BioSample)
+      /\b[EDS]RS\d{6,}\b/g,        // Sample accession
+      /\b[EDS]RX\d{6,}\b/g,        // Experiment accession
+      /\b[EDS]RR\d{6,}\b/g,        // Run accession
+      /\b[EDS]RZ\d{6,}\b/g,        // Analysis accession
+      /\bGCA_\d{9}\.\d+\b/g       // Assembly accession
+    ];
+
+    const pmidInput = document.getElementById("pmidInput");
+    const runBtn = document.getElementById("runBtn");
+    const statusEl = document.getElementById("status");
+    const outputEl = document.getElementById("output");
+
+    function setStatus(text, cls) {
+      statusEl.className = `status ${cls || ""}`.trim();
+      statusEl.textContent = text;
+    }
+
+    function setOutput(text) {
+      outputEl.textContent = text;
+    }
+
+    async function fetchJson(url) {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} from ${url}`);
+      }
+      return res.json();
+    }
+
+    async function fetchText(url) {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} from ${url}`);
+      }
+      return res.text();
+    }
+
+    function extractAccessions(text) {
+      const found = new Set();
+      for (const re of patterns) {
+        const matches = text.match(re);
+        if (matches) {
+          for (const m of matches) {
+            found.add(m.toUpperCase());
+          }
+        }
+      }
+      return Array.from(found).sort();
+    }
+
+    async function getPmcUidFromPmid(pmid) {
+      const url = `${EUTILS_BASE}/elink.fcgi?dbfrom=pubmed&db=pmc&linkname=pubmed_pmc&id=${encodeURIComponent(pmid)}&retmode=json`;
+      const data = await fetchJson(url);
+      const linksets = data.linksets || [];
+      if (!linksets.length) {
+        return null;
+      }
+
+      const linksetdbs = linksets[0].linksetdbs || [];
+      for (const group of linksetdbs) {
+        if (
+          group.dbto === "pmc" &&
+          group.linkname === "pubmed_pmc" &&
+          Array.isArray(group.links) &&
+          group.links.length > 0
+        ) {
+          return String(group.links[0]);
+        }
+      }
+      return null;
+    }
+
+    async function getPmcidFromPmcUid(pmcUid) {
+      const url = `${EUTILS_BASE}/esummary.fcgi?db=pmc&id=${encodeURIComponent(pmcUid)}&retmode=json`;
+      const data = await fetchJson(url);
+      const rec = data.result && data.result[pmcUid];
+      if (!rec) {
+        return null;
+      }
+
+      const ids = rec.articleids || [];
+      for (const idObj of ids) {
+        if (idObj && idObj.idtype === "pmcid" && idObj.value) {
+          return idObj.value;
+        }
+      }
+      return null;
+    }
+
+    async function fetchPmcFullTextXml(pmcUid) {
+      const url = `${EUTILS_BASE}/efetch.fcgi?db=pmc&id=${encodeURIComponent(pmcUid)}&retmode=xml`;
+      return fetchText(url);
+    }
+
+    async function run() {
+      const pmid = pmidInput.value.trim();
+      if (!/^\d+$/.test(pmid)) {
+        setStatus("Enter a numeric PMID.", "warn");
+        setOutput("PMID must be digits only.");
+        return;
+      }
+
+      runBtn.disabled = true;
+      setOutput("Running...");
+
+      try {
+        setStatus("Checking PubMed -> PMC link...", "");
+        const pmcUid = await getPmcUidFromPmid(pmid);
+
+        if (!pmcUid) {
+          setStatus("This is not a PMCID article.", "warn");
+          setOutput(`PMID ${pmid} has no linked PMCID article in PMC.`);
+          return;
+        }
+
+        setStatus("Resolving PMCID...", "");
+        const pmcid = await getPmcidFromPmcUid(pmcUid);
+
+        if (!pmcid) {
+          setStatus("PMC link exists, but PMCID could not be resolved.", "warn");
+          setOutput(`Found PMC UID ${pmcUid}, but no PMCID string in summary.`);
+          return;
+        }
+
+        setStatus("Fetching full text XML from PMC...", "");
+        const xmlText = await fetchPmcFullTextXml(pmcUid);
+
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "application/xml");
+        const fullText = xmlDoc.documentElement ? xmlDoc.documentElement.textContent || "" : xmlText;
+
+        setStatus("Searching ENA accession numbers...", "");
+        const accessions = extractAccessions(fullText);
+
+        if (accessions.length === 0) {
+          setStatus(`PMCID found (${pmcid}). No ENA accession matches found.`, "warn");
+          setOutput(`PMID: ${pmid}\nPMCID: ${pmcid}\n\nNo ENA accession numbers matched.`);
+        } else {
+          setStatus(`PMCID found (${pmcid}). ${accessions.length} accession(s) matched.`, "ok");
+          setOutput(`PMID: ${pmid}\nPMCID: ${pmcid}\n\nMatched ENA accessions:\n${accessions.join("\n")}`);
+        }
+      } catch (err) {
+        setStatus("Request failed.", "err");
+        setOutput(`Error: ${err.message}\n\nIf this is a CORS/network issue, run a local web server and open this file via http://localhost.`);
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    runBtn.addEventListener("click", run);
+    pmidInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") run();
+    });
+  </script>
+</body>
+</html>
