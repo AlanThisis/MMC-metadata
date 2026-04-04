@@ -25,7 +25,16 @@
     - If URL includes `pubmed.ncbi.nlm.nih.gov/<pmid>`, extract `<pmid>`.
     - Reject anything else with clear validation feedback.
 
-3. Multi-input batch mode (newline-separated)
+3. PMC URL parsing (high-priority)
+- Goal: Capture the dominant link type present in the validation dataset.
+- Implementation:
+  - Extend parser to also accept PMC URLs and normalize to PMID:
+    - `https://pmc.ncbi.nlm.nih.gov/articles/PMC1234567/`
+    - `https://pmc.ncbi.nlm.nih.gov/articles/pmid/32010645/`
+  - For `PMCxxxxxxx` style links, resolve PMID through Entrez before normal pipeline.
+  - Keep strict error messaging for malformed PMC URLs.
+
+4. Multi-input batch mode (newline-separated)
 - Goal: Process many articles in one run.
 - Implementation:
   - Replace single-line input with textarea.
@@ -38,7 +47,7 @@
     - Keep this default even on GitHub Pages deployment
   - Show per-line progress and per-item status.
 
-4. CSV export (metadata OFF baseline)
+5. CSV export (metadata OFF baseline)
 - Goal: Export minimal usable table.
 - Implementation:
   - Add `Export CSV` button enabled after a run.
@@ -59,13 +68,13 @@
   - Optional future enhancement:
     - Add an alternate "long format" export with one row per `(article, accession)`.
 
-5. Metadata ON/OFF toggle
+6. Metadata ON/OFF toggle
 - Goal: Let user choose compact vs enriched output.
 - Implementation:
   - Add UI toggle: `Metadata: OFF | ON` (default OFF).
   - Keep tool execution identical; only output schema changes.
 
-6. Metadata ON schema expansion
+7. Metadata ON schema expansion
 - Goal: Add bibliographic context for downstream triage/reporting.
 - Implementation:
   - Pull metadata from Entrez summaries where available.
@@ -77,7 +86,7 @@
     - `authors`
   - Keep one row per article for stable downstream use.
 
-7. Validation on `data/MMC_final_data.csv`
+8. Validation on `data/MMC_final_data.csv`
 - Goal: Demonstrate reliability against the existing labeled set.
 - Implementation:
   - Build a small runner in the page (or a companion script) to process all PMIDs from the CSV.
