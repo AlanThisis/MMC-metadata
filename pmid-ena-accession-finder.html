@@ -111,6 +111,10 @@
       cursor: pointer;
     }
 
+    .secondary-btn {
+      background: #57606a;
+    }
+
     button:disabled {
       opacity: 0.7;
       cursor: wait;
@@ -190,6 +194,7 @@
     <section id="toolPanel" class="panel">
       <div class="row">
         <button id="runBtn" type="button">Run Batch</button>
+        <button id="exportBtn" class="secondary-btn" type="button" disabled>Export CSV</button>
       </div>
       <textarea id="pmidInput" placeholder="32720686&#10;https://pubmed.ncbi.nlm.nih.gov/41931713/&#10;https://www.ncbi.nlm.nih.gov/pubmed/32720686&#10;https://pmc.ncbi.nlm.nih.gov/articles/PMC10828421/&#10;https://pmc.ncbi.nlm.nih.gov/articles/pmid/32010645/" aria-label="One PMID, PubMed URL, or PMC URL per line"></textarea>
 
@@ -258,12 +263,14 @@
 
     const pmidInput = document.getElementById("pmidInput");
     const runBtn = document.getElementById("runBtn");
+    const exportBtn = document.getElementById("exportBtn");
     const statusEl = document.getElementById("status");
     const outputEl = document.getElementById("output");
     const toolTabBtn = document.getElementById("toolTabBtn");
     const aboutTabBtn = document.getElementById("aboutTabBtn");
     const toolPanel = document.getElementById("toolPanel");
     const aboutPanel = document.getElementById("aboutPanel");
+    let lastBatchResults = [];
 
     function setStatus(text, cls) {
       statusEl.className = `status ${cls || ""}`.trim();
@@ -548,6 +555,76 @@
       return lines.join("\n");
     }
 
+    function toPubMedUrl(pmid) {
+      if (!pmid) return "";
+      return `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`;
+    }
+
+    function csvEscape(value) {
+      let s = String(value == null ? "" : value);
+      // Prevent CSV formula injection in spreadsheet tools.
+      if (/^[=+\-@]/.test(s)) {
+        s = `'${s}`;
+      }
+      if (/[",\n]/.test(s)) {
+        return `"${s.replace(/"/g, "\"\"")}"`;
+      }
+      return s;
+    }
+
+    function buildCsv(rows) {
+      const headers = [
+        "input_raw",
+        "pubmed_url",
+        "pmid",
+        "pmcid",
+        "is_pmc_article",
+        "accessions",
+        "accession_count",
+        "error_message"
+      ];
+      const lines = [headers.join(",")];
+      for (const r of rows) {
+        const accessions = (r.accessions || []).join(";");
+        const errorMessage = (r.invalidInput || r.error) ? (r.note || "") : "";
+        const row = [
+          r.inputRaw || "",
+          toPubMedUrl(r.pmid),
+          r.pmid || "",
+          r.pmcid || "",
+          r.isPmcArticle ? "true" : "false",
+          accessions,
+          (r.accessions || []).length,
+          errorMessage
+        ];
+        lines.push(row.map(csvEscape).join(","));
+      }
+      return lines.join("\n");
+    }
+
+    function downloadTextFile(filename, content, contentType) {
+      const blob = new Blob([content], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function exportCsv() {
+      if (!lastBatchResults.length) {
+        setStatus("No batch results available to export.", "warn");
+        return;
+      }
+      const csv = buildCsv(lastBatchResults);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      downloadTextFile(`pmid-ena-results-${timestamp}.csv`, csv, "text/csv;charset=utf-8");
+      setStatus(`CSV exported (${lastBatchResults.length} row(s)).`, "ok");
+    }
+
     async function run() {
       const lines = pmidInput.value
         .split(/\r?\n/)
@@ -561,6 +638,7 @@
       }
 
       runBtn.disabled = true;
+      exportBtn.disabled = true;
       setOutput("Running batch...");
       try {
         const results = [];
@@ -603,9 +681,13 @@
           hasErrors ? "err" : (hasInvalid ? "warn" : "ok")
         );
         setOutput(output);
+        lastBatchResults = results.slice();
+        exportBtn.disabled = results.length === 0;
       } catch (err) {
         setStatus("Batch failed unexpectedly.", "err");
         setOutput(`Unexpected error: ${err.message}`);
+        lastBatchResults = [];
+        exportBtn.disabled = true;
       } finally {
         runBtn.disabled = false;
       }
@@ -620,6 +702,7 @@
     }
 
     runBtn.addEventListener("click", run);
+    exportBtn.addEventListener("click", exportCsv);
     pmidInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run();
     });
