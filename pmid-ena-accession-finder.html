@@ -6,56 +6,72 @@
   <title>PMID to ENA Accession Finder</title>
   <style>
     :root {
-      --bg: #f3f6f8;
-      --card: #ffffff;
-      --text: #1b1f23;
-      --muted: #57606a;
-      --accent: #0b6bcb;
+      --color-background-primary: #ffffff;
+      --color-background-secondary: #f5f5f3;
+      --color-background-info: #e6f1fb;
+      --color-text-primary: #1a1a18;
+      --color-text-secondary: #5f5e5a;
+      --color-text-tertiary: #888780;
+      --color-text-info: #185fa5;
+      --color-border-tertiary: rgba(0,0,0,0.12);
+      --color-border-secondary: rgba(0,0,0,0.22);
+      --color-border-info: rgba(24,95,165,0.4);
       --ok: #1a7f37;
       --warn: #9a6700;
       --err: #cf222e;
-      --border: #d0d7de;
+      --border-radius-md: 8px;
+      --border-radius-lg: 12px;
+      --font-sans: system-ui, -apple-system, sans-serif;
+      --font-mono: 'Menlo', 'Monaco', 'Courier New', monospace;
     }
 
     body {
       margin: 0;
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      color: var(--text);
-      background: radial-gradient(circle at top left, #e7f1fb, var(--bg) 50%);
+      font-family: var(--font-sans);
+      background: #eef2f7;
       min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 24px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2rem 1rem;
+      color: var(--color-text-primary);
     }
 
     .card {
-      width: min(900px, 100%);
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      box-shadow: 0 8px 30px rgba(27, 31, 35, 0.08);
-      padding: 24px;
+      background: var(--color-background-primary);
+      border-radius: var(--border-radius-lg);
+      border: 0.5px solid var(--color-border-tertiary);
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 760px;
+      box-shadow: none;
     }
 
     .tabs {
       display: flex;
       gap: 8px;
-      margin: 12px 0 14px;
+      padding-bottom: 1rem;
+      border-bottom: 0.5px solid var(--color-border-tertiary);
+      margin: 0 0 1.5rem;
     }
 
     .tab-btn {
-      padding: 8px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #f6f8fa;
-      color: var(--text);
-      font-weight: 600;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: var(--border-radius-md);
+      border: 0.5px solid var(--color-border-tertiary);
+      background: transparent;
+      color: var(--color-text-secondary);
       cursor: pointer;
+      font-weight: 400;
+      font-family: var(--font-sans);
     }
 
     .tab-btn.active {
-      background: #dbeafe;
-      border-color: #8fbdf2;
+      background: var(--color-background-info);
+      color: var(--color-text-info);
+      border-color: var(--color-border-info);
+      font-weight: 500;
     }
 
     .panel[hidden] {
@@ -63,61 +79,126 @@
     }
 
     h1 {
-      margin-top: 0;
-      margin-bottom: 8px;
-      font-size: 1.5rem;
+      font-size: 20px;
+      font-weight: 500;
+      color: var(--color-text-primary);
+      margin: 0 0 4px;
     }
 
-    p {
-      margin-top: 0;
-      color: var(--muted);
+    .subtitle {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      line-height: 1.5;
+      margin: 0 0 1.25rem;
     }
 
-    .row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
-
-    input {
-      flex: 1;
-      min-width: 220px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 1rem;
+    .field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
     }
 
     textarea {
       width: 100%;
-      min-height: 140px;
+      height: 140px;
+      font-family: var(--font-mono);
+      font-size: 13px;
       padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 0.98rem;
-      line-height: 1.4;
+      border-radius: var(--border-radius-md);
+      border: 0.5px solid var(--color-border-secondary);
+      background: var(--color-background-primary);
+      color: var(--color-text-primary);
       resize: vertical;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      line-height: 1.6;
+      outline: none;
     }
 
-    button {
-      padding: 10px 14px;
-      border: 0;
-      border-radius: 8px;
-      background: var(--accent);
-      color: white;
-      font-weight: 600;
+    textarea:focus {
+      border-color: var(--color-text-info);
+      box-shadow: 0 0 0 2px var(--color-background-info);
+    }
+
+    .actions-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 1.25rem;
+    }
+
+    .btn-primary {
+      padding: 7px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: var(--border-radius-md);
+      border: 0.5px solid var(--color-border-info);
+      background: var(--color-background-info);
+      color: var(--color-text-info);
+      cursor: pointer;
+      font-family: var(--font-sans);
+    }
+
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-primary:active { transform: scale(0.98); }
+
+    .btn-secondary {
+      padding: 7px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: var(--border-radius-md);
+      border: 0.5px solid var(--color-border-tertiary);
+      background: transparent;
+      color: var(--color-text-tertiary);
+      cursor: not-allowed;
+      font-family: var(--font-sans);
+    }
+
+    .btn-secondary.enabled {
+      color: var(--color-text-primary);
+      border-color: var(--color-border-secondary);
       cursor: pointer;
     }
 
-    .secondary-btn {
-      background: #57606a;
+    .btn-secondary.enabled:hover {
+      background: var(--color-background-secondary);
     }
 
-    button:disabled {
-      opacity: 0.7;
-      cursor: wait;
+    .option-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: var(--border-radius-md);
+      border: 0.5px solid var(--color-border-tertiary);
+      background: var(--color-background-secondary);
+      margin: 1rem 0 1.25rem;
+    }
+
+    .option-row input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+      accent-color: var(--color-text-info);
+      flex-shrink: 0;
+    }
+
+    .option-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-text-primary);
+      cursor: pointer;
+      display: block;
+      line-height: 1.3;
+    }
+
+    .option-desc {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      display: block;
+      margin-top: 1px;
     }
 
     .status {
@@ -130,30 +211,55 @@
     .err { color: var(--err); }
 
     .result-box {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      background: #fbfdff;
+      border-radius: var(--border-radius-md);
+      border: 0.5px solid var(--color-border-tertiary);
+      padding: 0;
+      overflow: hidden;
     }
 
-    pre {
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      border-bottom: 0.5px solid var(--color-border-tertiary);
+      background: var(--color-background-secondary);
+    }
+
+    .results-header-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .results-count {
+      font-size: 12px;
+      color: var(--color-text-tertiary);
+    }
+
+    .results-body {
       margin: 0;
+      padding: 12px;
       max-height: 320px;
       overflow: auto;
       white-space: pre-wrap;
       word-break: break-word;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.92rem;
-      line-height: 1.4;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--color-text-tertiary);
+      line-height: 1.6;
+      min-height: 80px;
     }
 
     .about-box {
-      border: 1px solid var(--border);
+      border: 1px solid var(--color-border-tertiary);
       border-radius: 10px;
       padding: 14px;
       background: #fbfdff;
       line-height: 1.5;
-      color: var(--text);
+      color: var(--color-text-primary);
     }
 
     .about-box h2,
@@ -168,7 +274,7 @@
     }
 
     .case {
-      border: 1px solid var(--border);
+      border: 1px solid var(--color-border-tertiary);
       border-radius: 8px;
       background: #ffffff;
       padding: 10px;
@@ -184,7 +290,7 @@
 <body>
   <main class="card">
     <h1>PMID to PMCID to ENA Accessions</h1>
-    <p>Enter one PMID, PubMed URL, or PMC URL per line. If an article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
+    <p class="subtitle">Enter one PMID, PubMed URL, or PMC URL per line. If an article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
 
     <div class="tabs">
       <button id="toolTabBtn" class="tab-btn active" type="button" aria-controls="toolPanel">Tool</button>
@@ -192,16 +298,29 @@
     </div>
 
     <section id="toolPanel" class="panel">
-      <div class="row">
-        <button id="runBtn" type="button">Run Batch</button>
-        <button id="exportBtn" class="secondary-btn" type="button" disabled>Export CSV</button>
-      </div>
+      <label class="field-label" for="pmidInput">Input</label>
       <textarea id="pmidInput" placeholder="32720686&#10;https://pubmed.ncbi.nlm.nih.gov/41931713/&#10;https://www.ncbi.nlm.nih.gov/pubmed/32720686&#10;https://pmc.ncbi.nlm.nih.gov/articles/PMC10828421/&#10;https://pmc.ncbi.nlm.nih.gov/articles/pmid/32010645/" aria-label="One PMID, PubMed URL, or PMC URL per line"></textarea>
+      <div class="option-row">
+        <input id="metadataToggle" type="checkbox">
+        <label for="metadataToggle">
+          <span class="option-label">Include metadata in results</span>
+          <span class="option-desc">Adds title, journal, publication year, DOI, and authors to each row.</span>
+        </label>
+      </div>
+
+      <div class="actions-row">
+        <button id="runBtn" class="btn-primary" type="button">Run Batch</button>
+        <button id="exportBtn" class="btn-secondary" type="button" disabled>Export CSV</button>
+      </div>
 
       <div id="status" class="status" aria-live="polite"></div>
 
       <section class="result-box">
-        <pre id="output">No query run yet.</pre>
+        <div class="results-header">
+          <span class="results-header-label">Results</span>
+          <span id="resultCount" class="results-count">-</span>
+        </div>
+        <div id="output" class="results-body">No query run yet.</div>
       </section>
     </section>
 
@@ -264,13 +383,16 @@
     const pmidInput = document.getElementById("pmidInput");
     const runBtn = document.getElementById("runBtn");
     const exportBtn = document.getElementById("exportBtn");
+    const metadataToggle = document.getElementById("metadataToggle");
     const statusEl = document.getElementById("status");
     const outputEl = document.getElementById("output");
+    const resultCountEl = document.getElementById("resultCount");
     const toolTabBtn = document.getElementById("toolTabBtn");
     const aboutTabBtn = document.getElementById("aboutTabBtn");
     const toolPanel = document.getElementById("toolPanel");
     const aboutPanel = document.getElementById("aboutPanel");
     let lastBatchResults = [];
+    let lastBatchIncludeMetadata = false;
 
     function setStatus(text, cls) {
       statusEl.className = `status ${cls || ""}`.trim();
@@ -279,6 +401,15 @@
 
     function setOutput(text) {
       outputEl.textContent = text;
+    }
+
+    function setResultCount(text) {
+      resultCountEl.textContent = text;
+    }
+
+    function setExportEnabled(enabled) {
+      exportBtn.disabled = !enabled;
+      exportBtn.classList.toggle("enabled", !!enabled);
     }
 
     function sleep(ms) {
@@ -418,6 +549,12 @@
       return (data.result && data.result[pmcUid]) || null;
     }
 
+    async function getPubmedSummaryByPmid(pmid) {
+      const url = `${EUTILS_BASE}/esummary.fcgi?db=pubmed&id=${encodeURIComponent(pmid)}&retmode=json`;
+      const data = await fetchJson(url);
+      return (data.result && data.result[String(pmid)]) || null;
+    }
+
     function getArticleIdValue(summaryRec, idType) {
       if (!summaryRec) return null;
       const ids = summaryRec.articleids || [];
@@ -429,16 +566,36 @@
       return null;
     }
 
+    function extractMetadata(summaryRec) {
+      if (!summaryRec) {
+        return { title: "", journal: "", pubYear: "", doi: "", authors: "" };
+      }
+      const title = summaryRec.title || "";
+      const journal = summaryRec.fulljournalname || summaryRec.source || "";
+      const pubdate = String(summaryRec.pubdate || "");
+      const yearMatch = pubdate.match(/\b(19|20)\d{2}\b/);
+      const pubYear = yearMatch ? yearMatch[0] : "";
+      const doi = getArticleIdValue(summaryRec, "doi") || "";
+      const authorsArr = Array.isArray(summaryRec.authors) ? summaryRec.authors : [];
+      const authors = authorsArr
+        .map((a) => (a && a.name ? String(a.name).trim() : ""))
+        .filter(Boolean)
+        .join("; ");
+      return { title, journal, pubYear, doi, authors };
+    }
+
     async function fetchPmcFullTextXml(pmcUid) {
       const url = `${EUTILS_BASE}/efetch.fcgi?db=pmc&id=${encodeURIComponent(pmcUid)}&retmode=xml`;
       return fetchText(url);
     }
 
-    async function processSingleInput(parsed) {
+    async function processSingleInput(parsed, options = {}) {
+      const includeMetadata = !!options.includeMetadata;
       try {
         let pmid = parsed.pmid || "";
         let pmcUid = "";
         let pmcid = "";
+        let metadata = { title: "", journal: "", pubYear: "", doi: "", authors: "" };
 
         if (parsed.pmid) {
           pmcUid = await getPmcUidFromPmid(parsed.pmid);
@@ -448,12 +605,17 @@
         }
 
         if (!pmcUid) {
+          if (includeMetadata && parsed.pmid) {
+            const pubmedSummary = await getPubmedSummaryByPmid(parsed.pmid);
+            metadata = extractMetadata(pubmedSummary);
+          }
           return {
             pmid: parsed.pmid || "",
             isPmcArticle: false,
             pmcid: "",
             accessions: [],
-            note: "Not a PMCID article."
+            note: "Not a PMCID article.",
+            metadata
           };
         }
 
@@ -464,7 +626,8 @@
             isPmcArticle: false,
             pmcid: parsed.pmcid || "",
             accessions: [],
-            note: "PMC record summary could not be resolved."
+            note: "PMC record summary could not be resolved.",
+            metadata
           };
         }
 
@@ -474,6 +637,9 @@
         if (!pmid) {
           pmid = getArticleIdValue(summaryRec, "pmid") || "";
         }
+        if (includeMetadata) {
+          metadata = extractMetadata(summaryRec);
+        }
 
         if (!pmcid) {
           return {
@@ -481,7 +647,8 @@
             isPmcArticle: true,
             pmcid: "",
             accessions: [],
-            note: "PMC link exists, but PMCID could not be resolved."
+            note: "PMC link exists, but PMCID could not be resolved.",
+            metadata
           };
         }
 
@@ -497,7 +664,8 @@
           isPmcArticle: true,
           pmcid,
           accessions,
-          note: accessions.length ? "ENA accession matches found." : "No ENA accession matches found."
+          note: accessions.length ? "ENA accession matches found." : "No ENA accession matches found.",
+          metadata
         };
       } catch (err) {
         return {
@@ -506,7 +674,8 @@
           pmcid: parsed.pmcid || "",
           accessions: [],
           note: `Request failed: ${err.message}`,
-          error: true
+          error: true,
+          metadata: { title: "", journal: "", pubYear: "", doi: "", authors: "" }
         };
       }
     }
@@ -572,17 +741,33 @@
       return s;
     }
 
-    function buildCsv(rows) {
-      const headers = [
-        "input_raw",
-        "pubmed_url",
-        "pmid",
-        "pmcid",
-        "is_pmc_article",
-        "accessions",
-        "accession_count",
-        "error_message"
-      ];
+    function buildCsv(rows, includeMetadata) {
+      const headers = includeMetadata
+        ? [
+          "input_raw",
+          "pubmed_url",
+          "pmid",
+          "pmcid",
+          "is_pmc_article",
+          "accessions",
+          "accession_count",
+          "title",
+          "journal",
+          "pub_year",
+          "doi",
+          "authors",
+          "error_message"
+        ]
+        : [
+          "input_raw",
+          "pubmed_url",
+          "pmid",
+          "pmcid",
+          "is_pmc_article",
+          "accessions",
+          "accession_count",
+          "error_message"
+        ];
       const lines = [headers.join(",")];
       for (const r of rows) {
         const accessions = (r.accessions || []).join(";");
@@ -594,9 +779,18 @@
           r.pmcid || "",
           r.isPmcArticle ? "true" : "false",
           accessions,
-          (r.accessions || []).length,
-          errorMessage
+          (r.accessions || []).length
         ];
+        if (includeMetadata) {
+          row.push(
+            (r.metadata && r.metadata.title) || "",
+            (r.metadata && r.metadata.journal) || "",
+            (r.metadata && r.metadata.pubYear) || "",
+            (r.metadata && r.metadata.doi) || "",
+            (r.metadata && r.metadata.authors) || ""
+          );
+        }
+        row.push(errorMessage);
         lines.push(row.map(csvEscape).join(","));
       }
       return lines.join("\n");
@@ -617,12 +811,14 @@
     function exportCsv() {
       if (!lastBatchResults.length) {
         setStatus("No batch results available to export.", "warn");
+        setExportEnabled(false);
         return;
       }
-      const csv = buildCsv(lastBatchResults);
+      const includeMetadata = !!lastBatchIncludeMetadata;
+      const csv = buildCsv(lastBatchResults, includeMetadata);
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       downloadTextFile(`pmid-ena-results-${timestamp}.csv`, csv, "text/csv;charset=utf-8");
-      setStatus(`CSV exported (${lastBatchResults.length} row(s)).`, "ok");
+      setStatus(`CSV exported (${lastBatchResults.length} row(s), metadata ${includeMetadata ? "ON" : "OFF"}).`, "ok");
     }
 
     async function run() {
@@ -634,12 +830,15 @@
       if (!lines.length) {
         setStatus("Enter at least one PMID, PubMed URL, or PMC URL (one per line).", "warn");
         setOutput("No non-empty input lines were provided.");
+        setResultCount("0 items");
         return;
       }
 
       runBtn.disabled = true;
-      exportBtn.disabled = true;
+      setExportEnabled(false);
       setOutput("Running batch...");
+      setResultCount(`${lines.length} input(s)`);
+      const includeMetadata = metadataToggle.checked;
       try {
         const results = [];
         for (let i = 0; i < lines.length; i++) {
@@ -655,12 +854,13 @@
               pmcid: "",
               isPmcArticle: false,
               accessions: [],
-              note: parsed.error || "Invalid input."
+              note: parsed.error || "Invalid input.",
+              metadata: { title: "", journal: "", pubYear: "", doi: "", authors: "" }
             });
             continue;
           }
 
-          const single = await processSingleInput(parsed);
+          const single = await processSingleInput(parsed, { includeMetadata });
           results.push({
             inputRaw: rawInput,
             invalidInput: false,
@@ -669,7 +869,8 @@
             isPmcArticle: single.isPmcArticle,
             accessions: single.accessions,
             note: single.note,
-            error: !!single.error
+            error: !!single.error,
+            metadata: single.metadata || { title: "", journal: "", pubYear: "", doi: "", authors: "" }
           });
         }
 
@@ -677,17 +878,21 @@
         const hasErrors = results.some((r) => r.error);
         const hasInvalid = results.some((r) => r.invalidInput);
         setStatus(
-          `Batch complete: ${results.length} item(s) processed.`,
+          `Batch complete: ${results.length} item(s) processed (metadata ${includeMetadata ? "ON" : "OFF"}).`,
           hasErrors ? "err" : (hasInvalid ? "warn" : "ok")
         );
         setOutput(output);
+        setResultCount(`${results.length} result(s)`);
         lastBatchResults = results.slice();
-        exportBtn.disabled = results.length === 0;
+        lastBatchIncludeMetadata = includeMetadata;
+        setExportEnabled(results.length > 0);
       } catch (err) {
         setStatus("Batch failed unexpectedly.", "err");
         setOutput(`Unexpected error: ${err.message}`);
+        setResultCount("0 results");
         lastBatchResults = [];
-        exportBtn.disabled = true;
+        lastBatchIncludeMetadata = false;
+        setExportEnabled(false);
       } finally {
         runBtn.disabled = false;
       }
@@ -708,6 +913,7 @@
     });
     toolTabBtn.addEventListener("click", () => showPanel("tool"));
     aboutTabBtn.addEventListener("click", () => showPanel("about"));
+    setExportEnabled(false);
   </script>
 </body>
 </html>
