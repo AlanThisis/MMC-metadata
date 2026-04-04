@@ -1,6 +1,6 @@
 # PMID -> PMCID -> ENA Accession Finder
 
-This repository contains a standalone browser tool (`pmid-ena-accession-finder.html`) that batch-processes article identifiers and extracts ENA-style accession numbers from PMC full text.
+This repository contains a standalone browser tool (`index.html`) that batch-processes article identifiers and extracts ENA-style accession numbers from PMC full text.
 
 ## What It Does
 
@@ -18,7 +18,7 @@ This repository contains a standalone browser tool (`pmid-ena-accession-finder.h
 
 ## Usage
 
-1. Open `pmid-ena-accession-finder.html` in a browser.
+1. Open `index.html` in a browser.
 2. Paste inputs (one per line).
 3. Optional: enable **Include metadata in results**.
 4. Click **Run Batch**.
