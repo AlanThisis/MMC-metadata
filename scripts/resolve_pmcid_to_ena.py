@@ -7,7 +7,7 @@ This script follows the same core logic as the repository's HTML tool:
 
 Output states per processed PMCID row:
 - Found: write semicolon+space-delimited accession list into `Accession`
-- Clean miss: write `ENA_NOT_FOUND`
+- Clean miss: write `ACCESSION_NOT_FOUND`
 - API/network error: leave main CSV row untouched and write to failed.csv
 """
 
@@ -31,6 +31,7 @@ DEFAULT_FAILED_CSV = Path("data/failed.csv")
 DEFAULT_RPS_LIMIT = 5.0
 DEFAULT_MAX_RETRY_ATTEMPTS = 5
 DEFAULT_ENTREZ_TIMEOUT_SECONDS = 30.0
+ACCESSION_NOT_FOUND_VALUE = "ACCESSION_NOT_FOUND"
 
 class EntrezFetchError(Exception):
     """Raised when efetch fails for reasons that should be treated as API/network errors."""
@@ -189,7 +190,7 @@ def resolve_single_pmcid(pmcid: str, limiter: RateLimiter, pattern_groups: Itera
         accessions = extract_accessions(xml_text, groups)
         if accessions:
             return ResolutionResult(status="found", accession_value="; ".join(accessions))
-        return ResolutionResult(status="not_found", accession_value="ENA_NOT_FOUND")
+        return ResolutionResult(status="not_found", accession_value=ACCESSION_NOT_FOUND_VALUE)
     except Exception as exc:  # noqa: BLE001
         return ResolutionResult(
             status="failed",
@@ -359,7 +360,7 @@ def run_normal_mode(
             df.at[idx, "Accession"] = result.accession_value or ""
             found_count += 1
         elif result.status == "not_found":
-            df.at[idx, "Accession"] = "ENA_NOT_FOUND"
+            df.at[idx, "Accession"] = ACCESSION_NOT_FOUND_VALUE
             not_found_count += 1
         else:
             failure_rows.append(build_failure_row(row, idx, pmcid, 1, result))
@@ -477,7 +478,7 @@ def run_retry_mode(
             df.at[row_index, "Accession"] = result.accession_value or ""
             found_count += 1
         elif result.status == "not_found":
-            df.at[row_index, "Accession"] = "ENA_NOT_FOUND"
+            df.at[row_index, "Accession"] = ACCESSION_NOT_FOUND_VALUE
             not_found_count += 1
         else:
             remaining = dict(frow.to_dict())
@@ -520,7 +521,7 @@ def run_test_mode(limiter: RateLimiter, pattern_groups: Iterable[DatabasePattern
             print(f"{pmcid_raw}: FOUND -> {result.accession_value}")
         elif result.status == "not_found":
             not_found_count += 1
-            print(f"{pmcid_raw}: ENA_NOT_FOUND")
+            print(f"{pmcid_raw}: {ACCESSION_NOT_FOUND_VALUE}")
         else:
             failed_count += 1
             print(f"{pmcid_raw}: FAILED ({result.error_type}) {result.error_message}")
