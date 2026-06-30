@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Resolve PMCIDs to ENA study/project accessions and update MMC2.csv.
+"""Resolve PMCIDs to dataset-level accessions and update MMC2.csv.
 
 This script follows the same core logic as the repository's HTML tool:
 - Fetch PMC full text from NCBI Entrez (`efetch`, db=pmc)
-- Regex-scan full text for ENA/SRA project-level accessions
+- Regex-scan full text for selected project/study/dataset-level accessions
 
 Output states per processed PMCID row:
 - Found: write semicolon+space-delimited accession list into `Accession`
@@ -14,6 +14,7 @@ Output states per processed PMCID row:
 from __future__ import annotations
 
 import argparse
+import html
 import re
 import socket
 import sys
@@ -21,6 +22,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import pandas as pd
 from Bio import Entrez
@@ -31,15 +34,19 @@ DEFAULT_FAILED_CSV = Path("data/failed.csv")
 DEFAULT_RPS_LIMIT = 5.0
 DEFAULT_MAX_RETRY_ATTEMPTS = 5
 DEFAULT_ENTREZ_TIMEOUT_SECONDS = 30.0
-
-ACCESSION_PATTERNS = (
-    re.compile(r"PRJ(?:E|D|N)[A-Z][0-9]+", re.IGNORECASE),
-    re.compile(r"(?:E|D|S)RP[0-9]{6,}", re.IGNORECASE),
-)
-
+PMC_REPORT_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 class EntrezFetchError(Exception):
     """Raised when efetch fails for reasons that should be treated as API/network errors."""
+
+
+@dataclass(frozen=True)
+class DatabasePatternGroup:
+    """Named accession pattern family selectable from the CLI."""
+
+    key: str
+    label: str
+    patterns: tuple[re.Pattern[str], ...]
 
 
 @dataclass
@@ -50,6 +57,50 @@ class ResolutionResult:
     accession_value: Optional[str] = None
     error_type: Optional[str] = None
     error_message: Optional[str] = None
+
+
+DATABASE_PATTERN_GROUPS: tuple[DatabasePatternGroup, ...] = (
+    DatabasePatternGroup(
+        key="ncbi",
+        label="NCBI SRA / BioProject",
+        patterns=(re.compile(r"PRJNA[0-9]+", re.IGNORECASE), re.compile(r"SRP[0-9]{5,}", re.IGNORECASE)),
+    ),
+    DatabasePatternGroup(
+        key="ena",
+        label="ENA / EBI",
+        patterns=(re.compile(r"PRJEB[0-9]+", re.IGNORECASE), re.compile(r"ERP[0-9]{5,}", re.IGNORECASE)),
+    ),
+    DatabasePatternGroup(
+        key="ddbj",
+        label="DDBJ DRA / BioProject",
+        patterns=(
+            re.compile(r"PRJDB[0-9]+", re.IGNORECASE),
+            re.compile(r"DRP[0-9]{5,}", re.IGNORECASE),
+            re.compile(r"DRA[0-9]{5,}", re.IGNORECASE),
+        ),
+    ),
+    DatabasePatternGroup(
+        key="gsa",
+        label="GSA / CNCB-NGDC",
+        patterns=(re.compile(r"PRJCA[0-9]+", re.IGNORECASE), re.compile(r"CRA[0-9]{6,}", re.IGNORECASE)),
+    ),
+    DatabasePatternGroup(
+        key="cnsa",
+        label="CNSA / CNGBdb",
+        patterns=(re.compile(r"CNP[0-9]{7,}", re.IGNORECASE),),
+    ),
+    DatabasePatternGroup(
+        key="geo",
+        label="NCBI GEO",
+        patterns=(re.compile(r"GSE[0-9]+", re.IGNORECASE),),
+    ),
+    DatabasePatternGroup(
+        key="arrayexpress",
+        label="ArrayExpress / BioStudies",
+        patterns=(re.compile(r"E-(?:MTAB|MEXP|TABM|GEOD)-[0-9]+", re.IGNORECASE),),
+    ),
+)
+DATABASE_PATTERN_GROUPS_BY_KEY = {group.key: group for group in DATABASE_PATTERN_GROUPS}
 
 
 class RateLimiter:
@@ -84,13 +135,22 @@ def normalize_pmcid(value: object) -> str:
     return raw
 
 
-def extract_accessions(text: str) -> list[str]:
+def extract_accessions(text: str, pattern_groups: Iterable[DatabasePatternGroup]) -> list[str]:
     """Extract and return unique sorted accession matches from free text."""
     found: set[str] = set()
-    for pattern in ACCESSION_PATTERNS:
-        for match in pattern.findall(text):
-            found.add(match.upper())
+    for group in pattern_groups:
+        for pattern in group.patterns:
+            for match in pattern.findall(text):
+                found.add(match.upper())
     return sorted(found)
+
+
+def html_to_text(markup: str) -> str:
+    """Convert simple HTML markup into searchable plain text."""
+    without_scripts = re.sub(r"<script\b[^>]*>.*?</script\s*>", " ", markup, flags=re.IGNORECASE | re.DOTALL)
+    without_styles = re.sub(r"<style\b[^>]*>.*?</style\s*>", " ", without_scripts, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<[^>]+>", " ", without_styles)
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
 def fetch_pmc_fulltext_xml(pmcid: str, limiter: RateLimiter) -> str:
@@ -133,11 +193,39 @@ def fetch_pmc_fulltext_xml(pmcid: str, limiter: RateLimiter) -> str:
     return text
 
 
-def resolve_single_pmcid(pmcid: str, limiter: RateLimiter) -> ResolutionResult:
-    """Resolve one PMCID to accession(s) using efetch + regex scan."""
+def fetch_pmc_report_text(pmcid: str, limiter: RateLimiter) -> str:
+    """Fetch PMC report text and return searchable content.
+
+    Some PMC reports include generated article sections, such as Data
+    Availability Statements, that are not present in the Entrez XML payload.
+    """
+    limiter.wait()
+    uid = pmcid.replace("PMC", "", 1)
+    url = f"https://pmc.ncbi.nlm.nih.gov/articles/instance/{uid}/?report=xml"
+    try:
+        request = Request(url, headers=PMC_REPORT_HEADERS)
+        with urlopen(request, timeout=DEFAULT_ENTREZ_TIMEOUT_SECONDS) as response:
+            payload = response.read()
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise EntrezFetchError(str(exc)) from exc
+
+    text = payload.decode("utf-8", errors="replace")
+    if "recaptcha/challengepage" in text or "g-recaptcha" in text:
+        raise EntrezFetchError("PMC report request returned a challenge page")
+    return html_to_text(text)
+
+
+def resolve_single_pmcid(pmcid: str, limiter: RateLimiter, pattern_groups: Iterable[DatabasePatternGroup]) -> ResolutionResult:
+    """Resolve one PMCID to accession(s) using PMC XML plus HTML fallback."""
+    groups = tuple(pattern_groups)
     try:
         xml_text = fetch_pmc_fulltext_xml(pmcid, limiter)
-        accessions = extract_accessions(xml_text)
+        accessions = extract_accessions(xml_text, groups)
+        if not accessions:
+            # PMC's rendered article page can contain generated sections absent
+            # from Entrez XML, e.g. PMC6997737's Data Availability Statement.
+            report_text = fetch_pmc_report_text(pmcid, limiter)
+            accessions = extract_accessions(report_text, groups)
         if accessions:
             return ResolutionResult(status="found", accession_value="; ".join(accessions))
         return ResolutionResult(status="not_found", accession_value="ENA_NOT_FOUND")
@@ -149,11 +237,17 @@ def resolve_single_pmcid(pmcid: str, limiter: RateLimiter) -> ResolutionResult:
         )
 
 
-def run_with_retry(pmcid: str, limiter: RateLimiter, max_attempts: int) -> ResolutionResult:
+def run_with_retry(
+    pmcid: str,
+    limiter: RateLimiter,
+    max_attempts: int,
+    pattern_groups: Iterable[DatabasePatternGroup],
+) -> ResolutionResult:
     """Resolve PMCID with exponential backoff retry attempts."""
+    groups = tuple(pattern_groups)
 
     def _attempt() -> ResolutionResult:
-        result = resolve_single_pmcid(pmcid, limiter)
+        result = resolve_single_pmcid(pmcid, limiter, groups)
         if result.status == "failed":
             raise EntrezFetchError(result.error_message or "unknown error")
         return result
@@ -221,10 +315,65 @@ def write_failed_csv(path: Path, failure_rows: list[dict[str, str]], fallback_co
     failed_df.to_csv(path, index=False)
 
 
-def run_normal_mode(input_csv: Path, failed_csv: Path, limiter: RateLimiter) -> tuple[int, int, int]:
+def split_db_keys(values: Iterable[str]) -> list[str]:
+    """Split repeated/comma-separated DB key CLI values into normalized keys."""
+    keys: list[str] = []
+    for value in values:
+        for part in str(value).split(","):
+            key = part.strip().lower()
+            if key:
+                keys.append(key)
+    return keys
+
+
+def format_pattern_group_keys(pattern_groups: Iterable[DatabasePatternGroup]) -> str:
+    """Format selected DB group keys for stdout/help text."""
+    return ", ".join(group.key for group in pattern_groups)
+
+
+def resolve_pattern_groups(include_values: Iterable[str], exclude_values: Iterable[str]) -> tuple[DatabasePatternGroup, ...]:
+    """Resolve include/exclude DB CLI values into pattern groups.
+
+    By default all groups are selected. `include_values` narrows that baseline,
+    then `exclude_values` removes groups from the selected set.
+    """
+    include_keys = split_db_keys(include_values)
+    exclude_keys = split_db_keys(exclude_values)
+    requested_keys = include_keys + exclude_keys
+    invalid = sorted({key for key in requested_keys if key not in DATABASE_PATTERN_GROUPS_BY_KEY})
+    if invalid:
+        valid = ", ".join(DATABASE_PATTERN_GROUPS_BY_KEY)
+        raise ValueError(f"Unknown DB group(s): {', '.join(invalid)}. Valid choices: {valid}")
+
+    if include_keys:
+        selected_keys = list(dict.fromkeys(include_keys))
+    else:
+        selected_keys = [group.key for group in DATABASE_PATTERN_GROUPS]
+
+    excluded = set(exclude_keys)
+    selected = tuple(DATABASE_PATTERN_GROUPS_BY_KEY[key] for key in selected_keys if key not in excluded)
+    if not selected:
+        raise ValueError("No DB groups selected after applying include/exclude filters.")
+    return selected
+
+
+def print_database_groups() -> None:
+    """Print available DB pattern groups."""
+    for group in DATABASE_PATTERN_GROUPS:
+        regexes = ", ".join(pattern.pattern for pattern in group.patterns)
+        print(f"{group.key}\t{group.label}\t{regexes}")
+
+
+def run_normal_mode(
+    input_csv: Path,
+    failed_csv: Path,
+    limiter: RateLimiter,
+    pattern_groups: Iterable[DatabasePatternGroup],
+) -> tuple[int, int, int]:
     """Process all rows with non-empty PMCID and update Accession in main CSV."""
     df = read_main_csv(input_csv)
     ensure_columns(df, ("pmc_id", "Accession"))
+    groups = tuple(pattern_groups)
 
     found_count = 0
     not_found_count = 0
@@ -244,7 +393,7 @@ def run_normal_mode(input_csv: Path, failed_csv: Path, limiter: RateLimiter) -> 
             failed_count += 1
             continue
 
-        result = resolve_single_pmcid(pmcid, limiter)
+        result = resolve_single_pmcid(pmcid, limiter, groups)
         if result.status == "found":
             df.at[idx, "Accession"] = result.accession_value or ""
             found_count += 1
@@ -260,7 +409,13 @@ def run_normal_mode(input_csv: Path, failed_csv: Path, limiter: RateLimiter) -> 
     return found_count, not_found_count, failed_count
 
 
-def run_retry_mode(input_csv: Path, failed_csv: Path, limiter: RateLimiter, max_attempts: int) -> tuple[int, int, int]:
+def run_retry_mode(
+    input_csv: Path,
+    failed_csv: Path,
+    limiter: RateLimiter,
+    max_attempts: int,
+    pattern_groups: Iterable[DatabasePatternGroup],
+) -> tuple[int, int, int]:
     """Retry only failed rows; keep unresolved rows in failed.csv."""
     if not failed_csv.exists():
         print("No failed.csv found. Nothing to retry.")
@@ -276,6 +431,7 @@ def run_retry_mode(input_csv: Path, failed_csv: Path, limiter: RateLimiter, max_
     not_found_count = 0
     failed_count = 0
     remaining_failures: list[dict[str, str]] = []
+    groups = tuple(pattern_groups)
 
     for _, frow in failed_df.iterrows():
         row_index_text = str(frow.get("row_index", "")).strip()
@@ -353,7 +509,7 @@ def run_retry_mode(input_csv: Path, failed_csv: Path, limiter: RateLimiter, max_
             failed_count += 1
             continue
 
-        result = run_with_retry(pmcid, limiter, remaining_budget)
+        result = run_with_retry(pmcid, limiter, remaining_budget, groups)
         total_attempts = min(max_attempts, attempts_so_far + remaining_budget)
 
         if result.status == "found":
@@ -375,11 +531,12 @@ def run_retry_mode(input_csv: Path, failed_csv: Path, limiter: RateLimiter, max_
     return found_count, not_found_count, failed_count
 
 
-def run_test_mode(limiter: RateLimiter) -> tuple[int, int, int]:
+def run_test_mode(limiter: RateLimiter, pattern_groups: Iterable[DatabasePatternGroup]) -> tuple[int, int, int]:
     """Run a small hardcoded PMCID test set, stdout only."""
     test_pmcids = [
         "PMC4681099",       # known to contain ERP accessions
-        "PMC10828421",      # valid article, likely clean miss for target patterns
+        "PMC6997737",       # CNP accession appears in PMC report fallback
+        "PMC10828421",      # valid article with a PRJCA accession
         "PMC999999999999",  # non-existent PMCID
         "PMCABC123",        # invalid format
     ]
@@ -387,12 +544,14 @@ def run_test_mode(limiter: RateLimiter) -> tuple[int, int, int]:
     found_count = 0
     not_found_count = 0
     failed_count = 0
+    groups = tuple(pattern_groups)
 
     print("Running --test mode (no file writes)")
+    print(f"Selected DB groups: {format_pattern_group_keys(groups)}")
     for pmcid_raw in test_pmcids:
         try:
             pmcid = normalize_pmcid(pmcid_raw)
-            result = resolve_single_pmcid(pmcid, limiter)
+            result = resolve_single_pmcid(pmcid, limiter, groups)
         except Exception as exc:  # noqa: BLE001
             result = ResolutionResult(status="failed", error_type=type(exc).__name__, error_message=str(exc))
 
@@ -413,8 +572,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     """Create argument parser for CLI."""
     parser = argparse.ArgumentParser(
         description=(
-            "Resolve PMCID rows in data/MMC2.csv to ENA study/project accessions "
-            "using NCBI Entrez full-text fetch + regex extraction."
+            "Resolve PMCID rows in data/MMC2.csv to project/study/dataset accessions "
+            "using NCBI Entrez full-text fetch, PMC report fallback, and regex extraction."
         )
     )
     parser.add_argument(
@@ -436,6 +595,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--test",
         action="store_true",
         help="Run hardcoded PMCID test cases and print stdout only (no file writes).",
+    )
+    parser.add_argument(
+        "--include-db",
+        action="append",
+        default=[],
+        metavar="KEY[,KEY...]",
+        help=(
+            "Only search these DB pattern groups. Can be repeated or comma-separated. "
+            "Default: all groups. Use --list-dbs to see keys."
+        ),
+    )
+    parser.add_argument(
+        "--exclude-db",
+        action="append",
+        default=[],
+        metavar="KEY[,KEY...]",
+        help=(
+            "Exclude these DB pattern groups from the selected set. Can be repeated "
+            "or comma-separated. Applied after --include-db."
+        ),
+    )
+    parser.add_argument(
+        "--list-dbs",
+        action="store_true",
+        help="List available DB pattern group keys and regexes, then exit.",
     )
     parser.add_argument(
         "--email",
@@ -467,6 +651,16 @@ def main() -> int:
     parser = build_arg_parser()
     args = parser.parse_args()
 
+    if args.list_dbs:
+        print_database_groups()
+        return 0
+
+    try:
+        pattern_groups = resolve_pattern_groups(args.include_db, args.exclude_db)
+    except ValueError as exc:
+        print(f"Fatal error: {exc}", file=sys.stderr)
+        return 1
+
     input_csv = Path(args.input)
     failed_csv = Path(args.failed)
 
@@ -481,19 +675,22 @@ def main() -> int:
 
     try:
         if args.test:
-            found, not_found, failed = run_test_mode(limiter)
+            found, not_found, failed = run_test_mode(limiter, pattern_groups)
         elif args.retry:
             found, not_found, failed = run_retry_mode(
                 input_csv=input_csv,
                 failed_csv=failed_csv,
                 limiter=limiter,
                 max_attempts=args.max_attempts,
+                pattern_groups=pattern_groups,
             )
         else:
+            print(f"Selected DB groups: {format_pattern_group_keys(pattern_groups)}")
             found, not_found, failed = run_normal_mode(
                 input_csv=input_csv,
                 failed_csv=failed_csv,
                 limiter=limiter,
+                pattern_groups=pattern_groups,
             )
     except Exception as exc:  # noqa: BLE001
         print(f"Fatal error: {exc}", file=sys.stderr)

@@ -1,2 +1,4 @@
 data/
 TODO.md
+__pycache__/
+*.py[cod]
