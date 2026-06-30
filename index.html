@@ -759,11 +759,6 @@
       return fetchText(url);
     }
 
-    async function fetchPmcReportText(pmcid) {
-      const url = `https://pmc.ncbi.nlm.nih.gov/articles/${encodeURIComponent(pmcid)}/?report=xml`;
-      return fetchText(url);
-    }
-
     async function processSingleInput(parsed, options = {}) {
       const includeMetadata = !!options.includeMetadata;
       const selectedGroups = Array.isArray(options.selectedGroups) ? options.selectedGroups : databasePatternGroups;
@@ -834,16 +829,7 @@
         const xmlDoc = parser.parseFromString(xmlText, "application/xml");
         const fullText = xmlDoc.documentElement ? xmlDoc.documentElement.textContent || "" : xmlText;
 
-        let accessions = extractAccessions(fullText, selectedGroups);
-        if (!accessions.length) {
-          try {
-            const reportText = await fetchPmcReportText(pmcid);
-            accessions = extractAccessions(reportText, selectedGroups);
-          } catch (_err) {
-            // The Entrez XML path is the authoritative no-proxy path. The PMC
-            // report fallback fills gaps when the browser can read it.
-          }
-        }
+        const accessions = extractAccessions(fullText, selectedGroups);
         return {
           pmid,
           isPmcArticle: true,

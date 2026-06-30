@@ -14,7 +14,6 @@ Output states per processed PMCID row:
 from __future__ import annotations
 
 import argparse
-import html
 import re
 import socket
 import sys
@@ -22,8 +21,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 import pandas as pd
 from Bio import Entrez
@@ -34,7 +31,6 @@ DEFAULT_FAILED_CSV = Path("data/failed.csv")
 DEFAULT_RPS_LIMIT = 5.0
 DEFAULT_MAX_RETRY_ATTEMPTS = 5
 DEFAULT_ENTREZ_TIMEOUT_SECONDS = 30.0
-PMC_REPORT_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 class EntrezFetchError(Exception):
     """Raised when efetch fails for reasons that should be treated as API/network errors."""
@@ -145,14 +141,6 @@ def extract_accessions(text: str, pattern_groups: Iterable[DatabasePatternGroup]
     return sorted(found)
 
 
-def html_to_text(markup: str) -> str:
-    """Convert simple HTML markup into searchable plain text."""
-    without_scripts = re.sub(r"<script\b[^>]*>.*?</script\s*>", " ", markup, flags=re.IGNORECASE | re.DOTALL)
-    without_styles = re.sub(r"<style\b[^>]*>.*?</style\s*>", " ", without_scripts, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"<[^>]+>", " ", without_styles)
-    return re.sub(r"\s+", " ", html.unescape(text)).strip()
-
-
 def fetch_pmc_fulltext_xml(pmcid: str, limiter: RateLimiter) -> str:
     """Fetch PMC full-text XML using Entrez efetch.
 
@@ -193,39 +181,12 @@ def fetch_pmc_fulltext_xml(pmcid: str, limiter: RateLimiter) -> str:
     return text
 
 
-def fetch_pmc_report_text(pmcid: str, limiter: RateLimiter) -> str:
-    """Fetch PMC report text and return searchable content.
-
-    Some PMC reports include generated article sections, such as Data
-    Availability Statements, that are not present in the Entrez XML payload.
-    """
-    limiter.wait()
-    uid = pmcid.replace("PMC", "", 1)
-    url = f"https://pmc.ncbi.nlm.nih.gov/articles/instance/{uid}/?report=xml"
-    try:
-        request = Request(url, headers=PMC_REPORT_HEADERS)
-        with urlopen(request, timeout=DEFAULT_ENTREZ_TIMEOUT_SECONDS) as response:
-            payload = response.read()
-    except (HTTPError, URLError, TimeoutError, OSError) as exc:
-        raise EntrezFetchError(str(exc)) from exc
-
-    text = payload.decode("utf-8", errors="replace")
-    if "recaptcha/challengepage" in text or "g-recaptcha" in text:
-        raise EntrezFetchError("PMC report request returned a challenge page")
-    return html_to_text(text)
-
-
 def resolve_single_pmcid(pmcid: str, limiter: RateLimiter, pattern_groups: Iterable[DatabasePatternGroup]) -> ResolutionResult:
-    """Resolve one PMCID to accession(s) using PMC XML plus HTML fallback."""
+    """Resolve one PMCID to accession(s) using Entrez PMC XML."""
     groups = tuple(pattern_groups)
     try:
         xml_text = fetch_pmc_fulltext_xml(pmcid, limiter)
         accessions = extract_accessions(xml_text, groups)
-        if not accessions:
-            # PMC's rendered article page can contain generated sections absent
-            # from Entrez XML, e.g. PMC6997737's Data Availability Statement.
-            report_text = fetch_pmc_report_text(pmcid, limiter)
-            accessions = extract_accessions(report_text, groups)
         if accessions:
             return ResolutionResult(status="found", accession_value="; ".join(accessions))
         return ResolutionResult(status="not_found", accession_value="ENA_NOT_FOUND")
@@ -299,14 +260,14 @@ def build_failure_row(source_row: pd.Series, row_index: int, pmcid: str, attempt
     return record
 
 
-def write_failed_csv(path: Path, failure_rows: list[dict[str, str]], fallback_columns: list[str]) -> None:
+def write_failed_csv(path: Path, failure_rows: list[dict[str, str]], base_columns: list[str]) -> None:
     """Write/update failed.csv; remove file if empty failure set."""
     if not failure_rows:
         if path.exists():
             path.unlink()
         return
 
-    cols = list(fallback_columns)
+    cols = list(base_columns)
     for extra in ("row_index", "pmc_id", "error_type", "error_message", "attempts"):
         if extra not in cols:
             cols.append(extra)
@@ -535,7 +496,6 @@ def run_test_mode(limiter: RateLimiter, pattern_groups: Iterable[DatabasePattern
     """Run a small hardcoded PMCID test set, stdout only."""
     test_pmcids = [
         "PMC4681099",       # known to contain ERP accessions
-        "PMC6997737",       # CNP accession appears in PMC report fallback
         "PMC10828421",      # valid article with a PRJCA accession
         "PMC999999999999",  # non-existent PMCID
         "PMCABC123",        # invalid format
@@ -573,7 +533,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Resolve PMCID rows in data/MMC2.csv to project/study/dataset accessions "
-            "using NCBI Entrez full-text fetch, PMC report fallback, and regex extraction."
+            "using NCBI Entrez full-text fetch + regex extraction."
         )
     )
     parser.add_argument(

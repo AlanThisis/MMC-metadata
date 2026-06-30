@@ -93,15 +93,15 @@ ARRAYEXPRESS_PRIMARY = \bE-(?:MTAB|MEXP|TABM|GEOD)-[0-9]+\b
 The guiding rule is to prefer project, study, submission, or dataset-level
 accessions in the main output. Lower-level run, sample, experiment, and
 analysis accessions are real but are intentionally excluded from primary
-matching unless a later feature adds fallback/secondary reporting.
+matching unless a later feature adds secondary reporting.
 
 ## PMC Text Source Caveat
 
 Entrez `efetch` XML and the rendered PMC article report are not always
 identical. For example, `PMC6997737` has `CNP0000408` in the PMC Data
 Availability Statement on `?report=xml`, but that string is absent from the
-Entrez XML payload. The resolver should scan Entrez XML first and then scan the
-PMC article report as a fallback when no accession is found.
+Entrez XML payload. The resolver intentionally uses Entrez XML only, so these
+rendered-report-only accessions are known misses rather than retryable failures.
 
 ## Official Documentation Notes
 
