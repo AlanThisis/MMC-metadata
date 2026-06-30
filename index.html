@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PMID to ENA Accession Finder</title>
+  <title>PubMed to Accession Finder</title>
   <style>
     :root {
       --color-background-primary: #ffffff;
@@ -177,6 +177,67 @@
       margin: 1rem 0 1.25rem;
     }
 
+    .db-options {
+      border: 0.5px solid var(--color-border-tertiary);
+      border-radius: var(--border-radius-md);
+      background: var(--color-background-secondary);
+      padding: 12px 14px;
+      margin: 1rem 0 1.25rem;
+    }
+
+    .db-options-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 10px;
+    }
+
+    .db-options-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .db-options-note {
+      font-size: 12px;
+      color: var(--color-text-tertiary);
+    }
+
+    .db-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px 12px;
+    }
+
+    .db-choice {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      font-size: 13px;
+      color: var(--color-text-primary);
+      line-height: 1.3;
+    }
+
+    .db-choice input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+      accent-color: var(--color-text-info);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .db-choice-code {
+      display: block;
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+
     .option-row input[type="checkbox"] {
       width: 15px;
       height: 15px;
@@ -289,8 +350,8 @@
 </head>
 <body>
   <main class="card">
-    <h1>PMID to PMCID to ENA Accessions</h1>
-    <p class="subtitle">Enter one PMID, PubMed URL, or PMC URL per line. If an article has a PMCID, full text is fetched from PMC and searched for ENA accession numbers.</p>
+    <h1>PubMed to Accession Finder</h1>
+    <p class="subtitle">Enter one PMID, PMCID, PubMed URL, or PMC URL per line. If an article has a PMCID, full text is fetched from PMC and searched for selected database accession patterns.</p>
 
     <div class="tabs">
       <button id="toolTabBtn" class="tab-btn active" type="button" aria-controls="toolPanel">Tool</button>
@@ -307,6 +368,14 @@
           <span class="option-desc">Adds title, journal, publication year, DOI, and authors to each row.</span>
         </label>
       </div>
+
+      <section class="db-options" aria-labelledby="dbOptionsTitle">
+        <div class="db-options-header">
+          <div id="dbOptionsTitle" class="db-options-title">Database Patterns</div>
+          <div class="db-options-note">All selected by default</div>
+        </div>
+        <div id="dbOptionsGrid" class="db-grid"></div>
+      </section>
 
       <div class="actions-row">
         <button id="runBtn" class="btn-primary" type="button">Run Batch</button>
@@ -326,14 +395,33 @@
 
     <section id="aboutPanel" class="panel" hidden>
       <div class="about-box">
-        <h2>What This Script Does</h2>
+        <h2>What This Tool Does</h2>
         <ul>
           <li>Processes batch input (one item per line) and supports numeric PMID, PMCID, PubMed URL, and PMC URL formats.</li>
           <li>Normalizes each line to PMID/PMCID, then resolves to a PMC record when available.</li>
-          <li>For PMC articles, fetches full-text XML and scans text with ENA accession regex patterns.</li>
+          <li>For PMC articles, fetches full-text XML and scans text with selected accession regex patterns.</li>
           <li>Shows per-item output plus batch summary counts (parsed, invalid, PMC coverage, matches, and request errors).</li>
           <li>Applies client-side request throttling (~400 ms minimum between Entrez calls) to stay under no-key limits.</li>
         </ul>
+
+        <h3>Supported database families</h3>
+
+        <p>
+          The default run searches all supported primary accession families. Uncheck database families in the Tool tab to narrow matching.
+        </p>
+        <ul>
+          <li>NCBI SRA / BioProject: `PRJNA...`, `SRP...`</li>
+          <li>ENA / EBI: `PRJEB...`, `ERP...`</li>
+          <li>DDBJ DRA / BioProject: `PRJDB...`, `DRP...`, `DRA...`</li>
+          <li>GSA / CNCB-NGDC: `PRJCA...`, `CRA...`</li>
+          <li>CNSA / CNGBdb: `CNP...`</li>
+          <li>NCBI GEO: `GSE...`</li>
+          <li>ArrayExpress / BioStudies: `E-MTAB...`, `E-MEXP...`, `E-TABM...`, `E-GEOD...`</li>
+        </ul>
+
+        <p>
+          Lower-level run, sample, experiment, and analysis IDs such as `SRR`, `ERR`, `DRR`, `SRX`, `CRX`, and `CNR` are intentionally excluded from the primary match set to avoid flooding results with per-run or per-sample records.
+        </p>
 
         <h3>Export and metadata behavior</h3>
 
@@ -344,10 +432,16 @@
           Metadata mode adds: title, journal, publication year, DOI, and authors. Export uses the metadata mode from the batch run itself (not the current checkbox state), so schema/content stay consistent with that run.
         </p>
         <p>
-          ENA accession format reference:
+          Accession format references:
           <a href="https://ena-docs.readthedocs.io/en/latest/submit/general-guide/accessions.html" target="_blank" rel="noopener noreferrer">
-            ENA accession documentation
-          </a>
+            ENA accession documentation</a>,
+          <a href="https://www.ddbj.nig.ac.jp/insdc/prefix-e.html" target="_blank" rel="noopener noreferrer">DDBJ INSDC prefix table</a>,
+          <a href="https://www.ddbj.nig.ac.jp/dra/submission-e.html#accession" target="_blank" rel="noopener noreferrer">DDBJ DRA accessions</a>,
+          <a href="https://ngdc.cncb.ac.cn/gsa/support/standardsGsa" target="_blank" rel="noopener noreferrer">GSA standards</a>,
+          <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC7377928/" target="_blank" rel="noopener noreferrer">CNSA publication</a>,
+          <a href="https://www.ncbi.nlm.nih.gov/geo/info/overview.html" target="_blank" rel="noopener noreferrer">GEO overview</a>,
+          and
+          <a href="https://www.ebi.ac.uk/biostudies/arrayexpress/help" target="_blank" rel="noopener noreferrer">ArrayExpress help</a>.
         </p>
 
         <div class="case">
@@ -358,14 +452,14 @@
 
         <div class="case">
           <div class="case-title">Case 2: PMC article but no accession codes</div>
-          <div>Status: <strong>PMCID found (...). No ENA accession matches found.</strong></div>
-          <div>Meaning: Full text is available, but none of the current ENA regex patterns matched text in this paper.</div>
+          <div>Status: <strong>PMCID found (...). No accession matches found.</strong></div>
+          <div>Meaning: Full text is available, but none of the selected regex patterns matched text in this paper.</div>
         </div>
 
         <div class="case">
           <div class="case-title">Case 3: PMC article with accession codes</div>
           <div>Status: <strong>PMCID found (...). N accession(s) matched.</strong></div>
-          <div>Meaning: One or more ENA-style accession strings were detected and listed in the output panel.</div>
+          <div>Meaning: One or more selected database accession strings were detected and listed in the output panel.</div>
         </div>
       </div>
     </section>
@@ -376,21 +470,56 @@
     const MIN_REQUEST_INTERVAL_MS = 400;
     let lastRequestTimestamp = 0;
 
-    const patterns = [
-      /\bPRJ[EDN][A-Z]?\d+\b/g,    // Project accession (BioProject)
-      /\b[EDS]RP\d{6,}\b/g,        // Study accession
-      /\bSAM[EDN][A-Z]?\d+\b/g,    // Sample accession (BioSample)
-      /\b[EDS]RS\d{6,}\b/g,        // Sample accession
-      /\b[EDS]RX\d{6,}\b/g,        // Experiment accession
-      /\b[EDS]RR\d{6,}\b/g,        // Run accession
-      /\b[EDS]RZ\d{6,}\b/g,        // Analysis accession
-      /\bGCA_\d{9}\.\d+\b/g       // Assembly accession
+    const databasePatternGroups = [
+      {
+        id: "ncbi",
+        label: "NCBI SRA / BioProject",
+        displayPattern: "PRJNA..., SRP...",
+        patterns: [/\bPRJNA\d+\b/g, /\bSRP\d{5,}\b/g]
+      },
+      {
+        id: "ena",
+        label: "ENA / EBI",
+        displayPattern: "PRJEB..., ERP...",
+        patterns: [/\bPRJEB\d+\b/g, /\bERP\d{5,}\b/g]
+      },
+      {
+        id: "ddbj",
+        label: "DDBJ DRA / BioProject",
+        displayPattern: "PRJDB..., DRP..., DRA...",
+        patterns: [/\bPRJDB\d+\b/g, /\bDRP\d{5,}\b/g, /\bDRA\d{5,}\b/g]
+      },
+      {
+        id: "gsa",
+        label: "GSA / CNCB-NGDC",
+        displayPattern: "PRJCA..., CRA...",
+        patterns: [/\bPRJCA\d+\b/g, /\bCRA\d{6,}\b/g]
+      },
+      {
+        id: "cnsa",
+        label: "CNSA / CNGBdb",
+        displayPattern: "CNP...",
+        patterns: [/\bCNP\d{7,}\b/g]
+      },
+      {
+        id: "geo",
+        label: "NCBI GEO",
+        displayPattern: "GSE...",
+        patterns: [/\bGSE\d+\b/g]
+      },
+      {
+        id: "arrayexpress",
+        label: "ArrayExpress / BioStudies",
+        displayPattern: "E-MTAB..., E-MEXP..., E-TABM..., E-GEOD...",
+        patterns: [/\bE-(?:MTAB|MEXP|TABM|GEOD)-\d+\b/g]
+      }
     ];
 
     const pmidInput = document.getElementById("pmidInput");
     const runBtn = document.getElementById("runBtn");
     const exportBtn = document.getElementById("exportBtn");
     const metadataToggle = document.getElementById("metadataToggle");
+    const dbOptionsGrid = document.getElementById("dbOptionsGrid");
     const statusEl = document.getElementById("status");
     const outputEl = document.getElementById("output");
     const resultCountEl = document.getElementById("resultCount");
@@ -400,6 +529,7 @@
     const aboutPanel = document.getElementById("aboutPanel");
     let lastBatchResults = [];
     let lastBatchIncludeMetadata = false;
+    let lastBatchSelectedDbIds = [];
 
     function setStatus(text, cls) {
       statusEl.className = `status ${cls || ""}`.trim();
@@ -417,6 +547,37 @@
     function setExportEnabled(enabled) {
       exportBtn.disabled = !enabled;
       exportBtn.classList.toggle("enabled", !!enabled);
+    }
+
+    function renderDatabaseOptions() {
+      const fragment = document.createDocumentFragment();
+      for (const group of databasePatternGroups) {
+        const label = document.createElement("label");
+        label.className = "db-choice";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.name = "databasePattern";
+        input.value = group.id;
+        input.checked = true;
+        const text = document.createElement("span");
+        text.innerHTML = `${group.label}<span class="db-choice-code">${group.displayPattern}</span>`;
+        label.appendChild(input);
+        label.appendChild(text);
+        fragment.appendChild(label);
+      }
+      dbOptionsGrid.appendChild(fragment);
+    }
+
+    function getSelectedDatabaseGroups() {
+      const selectedIds = new Set(
+        Array.from(document.querySelectorAll('input[name="databasePattern"]:checked'))
+          .map((input) => input.value)
+      );
+      return databasePatternGroups.filter((group) => selectedIds.has(group.id));
+    }
+
+    function formatSelectedDatabaseLabels(selectedGroups) {
+      return selectedGroups.map((group) => group.label).join("; ");
     }
 
     function sleep(ms) {
@@ -515,13 +676,15 @@
       return res.text();
     }
 
-    function extractAccessions(text) {
+    function extractAccessions(text, selectedGroups) {
       const found = new Set();
-      for (const re of patterns) {
-        const matches = text.match(re);
-        if (matches) {
-          for (const m of matches) {
-            found.add(m.toUpperCase());
+      for (const group of selectedGroups) {
+        for (const re of group.patterns) {
+          const matches = text.match(re);
+          if (matches) {
+            for (const m of matches) {
+              found.add(m.toUpperCase());
+            }
           }
         }
       }
@@ -596,8 +759,14 @@
       return fetchText(url);
     }
 
+    async function fetchPmcReportText(pmcid) {
+      const url = `https://pmc.ncbi.nlm.nih.gov/articles/${encodeURIComponent(pmcid)}/?report=xml`;
+      return fetchText(url);
+    }
+
     async function processSingleInput(parsed, options = {}) {
       const includeMetadata = !!options.includeMetadata;
+      const selectedGroups = Array.isArray(options.selectedGroups) ? options.selectedGroups : databasePatternGroups;
       try {
         let pmid = parsed.pmid || "";
         let pmcUid = "";
@@ -665,13 +834,22 @@
         const xmlDoc = parser.parseFromString(xmlText, "application/xml");
         const fullText = xmlDoc.documentElement ? xmlDoc.documentElement.textContent || "" : xmlText;
 
-        const accessions = extractAccessions(fullText);
+        let accessions = extractAccessions(fullText, selectedGroups);
+        if (!accessions.length) {
+          try {
+            const reportText = await fetchPmcReportText(pmcid);
+            accessions = extractAccessions(reportText, selectedGroups);
+          } catch (_err) {
+            // The Entrez XML path is the authoritative no-proxy path. The PMC
+            // report fallback fills gaps when the browser can read it.
+          }
+        }
         return {
           pmid,
           isPmcArticle: true,
           pmcid,
           accessions,
-          note: accessions.length ? "ENA accession matches found." : "No ENA accession matches found.",
+          note: accessions.length ? "Accession matches found." : "No accession matches found.",
           metadata
         };
       } catch (err) {
@@ -687,7 +865,7 @@
       }
     }
 
-    function formatBatchOutput(results, totalLines) {
+    function formatBatchOutput(results, totalLines, selectedGroups) {
       const valid = results.filter((r) => !r.invalidInput);
       const invalid = results.filter((r) => r.invalidInput);
       const errors = results.filter((r) => r.error);
@@ -704,7 +882,8 @@
       lines.push(`- Parsed successfully: ${valid.length}`);
       lines.push(`- Invalid input lines: ${invalid.length}`);
       lines.push(`- PMC articles: ${pmcArticles.length}`);
-      lines.push(`- Articles with ENA matches: ${matchedArticles.length}`);
+      lines.push(`- Selected DB families: ${formatSelectedDatabaseLabels(selectedGroups)}`);
+      lines.push(`- Articles with accession matches: ${matchedArticles.length}`);
       lines.push(`- Unique accessions found: ${uniqueAccessions.size}`);
       lines.push(`- Request errors: ${errors.length}`);
       lines.push("");
@@ -723,7 +902,7 @@
         lines.push(`  PMC article: ${r.isPmcArticle ? "yes" : "no"}`);
         lines.push(`  Accession count: ${(r.accessions || []).length}`);
         if (r.accessions && r.accessions.length > 0) {
-          lines.push(`  Accessions: ${r.accessions.join(";")}`);
+          lines.push(`  Accessions: ${r.accessions.join("; ")}`);
         }
         lines.push(`  Message: ${r.note}`);
       });
@@ -777,7 +956,7 @@
         ];
       const lines = [headers.join(",")];
       for (const r of rows) {
-        const accessions = (r.accessions || []).join(";");
+        const accessions = (r.accessions || []).join("; ");
         const errorMessage = (r.invalidInput || r.error) ? (r.note || "") : "";
         const row = [
           r.inputRaw || "",
@@ -824,7 +1003,7 @@
       const includeMetadata = !!lastBatchIncludeMetadata;
       const csv = buildCsv(lastBatchResults, includeMetadata);
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      downloadTextFile(`pmid-ena-results-${timestamp}.csv`, csv, "text/csv;charset=utf-8");
+      downloadTextFile(`pubmed-accession-results-${timestamp}.csv`, csv, "text/csv;charset=utf-8");
       setStatus(`CSV exported (${lastBatchResults.length} row(s), metadata ${includeMetadata ? "ON" : "OFF"}).`, "ok");
     }
 
@@ -835,8 +1014,16 @@
         .filter(Boolean);
 
       if (!lines.length) {
-        setStatus("Enter at least one PMID, PubMed URL, or PMC URL (one per line).", "warn");
+        setStatus("Enter at least one PMID, PMCID, PubMed URL, or PMC URL (one per line).", "warn");
         setOutput("No non-empty input lines were provided.");
+        setResultCount("0 items");
+        return;
+      }
+
+      const selectedGroups = getSelectedDatabaseGroups();
+      if (!selectedGroups.length) {
+        setStatus("Select at least one database pattern family.", "warn");
+        setOutput("No database pattern families are selected.");
         setResultCount("0 items");
         return;
       }
@@ -867,7 +1054,7 @@
             continue;
           }
 
-          const single = await processSingleInput(parsed, { includeMetadata });
+          const single = await processSingleInput(parsed, { includeMetadata, selectedGroups });
           results.push({
             inputRaw: rawInput,
             invalidInput: false,
@@ -881,7 +1068,7 @@
           });
         }
 
-        const output = formatBatchOutput(results, lines.length);
+        const output = formatBatchOutput(results, lines.length, selectedGroups);
         const hasErrors = results.some((r) => r.error);
         const hasInvalid = results.some((r) => r.invalidInput);
         setStatus(
@@ -892,6 +1079,7 @@
         setResultCount(`${results.length} result(s)`);
         lastBatchResults = results.slice();
         lastBatchIncludeMetadata = includeMetadata;
+        lastBatchSelectedDbIds = selectedGroups.map((group) => group.id);
         setExportEnabled(results.length > 0);
       } catch (err) {
         setStatus("Batch failed unexpectedly.", "err");
@@ -899,6 +1087,7 @@
         setResultCount("0 results");
         lastBatchResults = [];
         lastBatchIncludeMetadata = false;
+        lastBatchSelectedDbIds = [];
         setExportEnabled(false);
       } finally {
         runBtn.disabled = false;
@@ -920,6 +1109,7 @@
     });
     toolTabBtn.addEventListener("click", () => showPanel("tool"));
     aboutTabBtn.addEventListener("click", () => showPanel("about"));
+    renderDatabaseOptions();
     setExportEnabled(false);
   </script>
 </body>
